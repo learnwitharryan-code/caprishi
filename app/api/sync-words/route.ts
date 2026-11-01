@@ -3,8 +3,10 @@ import { prisma } from '@/lib/db';
 import { CaptionTrack, CaptionSegment, CaptionWord } from '@/types/caption';
 import { syncWordsToTimeline } from '@/lib/captions/segment';
 import { sanitizeToHinglish } from '@/lib/captions/transliterate';
-import { genai, MODEL, FALLBACK_MODELS } from '@/lib/gemini/client';
+import { genai, MODEL, FALLBACK_MODELS, checkGeminiApiKey } from '@/lib/gemini/client';
 import fs from 'fs';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {

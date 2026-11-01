@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { transcribeAudio } from '@/lib/gemini/transcribe';
+import { checkGeminiApiKey } from '@/lib/gemini/client';
 import { geminiToCaptionTrack, PACING_PRESETS, PacingPresetKey, DEFAULT_RULES } from '@/lib/captions/segment';
 import { Language, CaptionTrack } from '@/types/caption';
 import { v4 as uuid } from 'uuid';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   let projectId = '';
@@ -23,6 +26,13 @@ export async function POST(req: NextRequest) {
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     if (!project.audioPath) return NextResponse.json({ error: 'Audio not extracted yet' }, { status: 400 });
+
+    if (!checkGeminiApiKey()) {
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is not configured in Vercel Environment Variables. Please add GEMINI_API_KEY in Project Settings > Environment Variables.' },
+        { status: 500 }
+      );
+    }
 
     // Update status
     await prisma.project.update({ where: { id: projectId }, data: { status: 'transcribing' } });
