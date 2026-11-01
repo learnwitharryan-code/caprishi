@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263.4 70% 50.4%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263.4 70% 50.4%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Caption Animation Classes from 30 Trending Caption Templates */
+.an-pop { animation: pop .3s both; }
+.an-bounce { animation: bounce .45s both; }
+.an-shake { animation: shake .35s both; }
+.an-glitch { animation: glitch .3s both; }
+.an-blur { animation: blur .45s both; }
+.an-fade { animation: fade .35s both; }
+.an-slide { animation: slide .3s both; }
+.an-wob { animation: wob .35s both; }
+.an-zoom { animation: zoom .35s both; }
+.car-blink { animation: blink .8s steps(2) infinite; }
+
+@keyframes pop {
+  0% { transform: scale(.6) rotate(var(--rot, 0deg)); }
+  60% { transform: scale(1.22) rotate(var(--rot, 0deg)); }
+  100% { transform: scale(1.08) rotate(var(--rot, 0deg)); }
+}
+@keyframes bounce {
+  0% { transform: translateY(0); }
+  35% { transform: translateY(-.35em) scale(1.12); }
+  70% { transform: translateY(.05em); }
+  100% { transform: scale(1.08); }
+}
+@keyframes shake {
+  0%, 100% { transform: scale(1.1); }
+  20% { transform: translateX(-.07em) rotate(-4deg) scale(1.1); }
+  40% { transform: translateX(.07em) rotate(4deg) scale(1.1); }
+  60% { transform: translateX(-.05em) scale(1.1); }
+  80% { transform: translateX(.05em) scale(1.1); }
+}
+@keyframes glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-.05em, .03em) skewX(8deg); }
+  40% { transform: translate(.05em, -.03em); }
+  60% { transform: translate(-.03em, -.03em) skewX(-8deg); }
+  100% { transform: translate(0); }
+}
+@keyframes blur {
+  from { filter: blur(.3em); opacity: 0; }
+  to { filter: blur(0); opacity: 1; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide {
+  from { transform: translateY(.45em); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes wob {
+  0% { transform: rotate(-8deg) scale(.7); }
+  60% { transform: rotate(5deg) scale(1.2); }
+  100% { transform: rotate(-2deg) scale(1.1); }
+}
+@keyframes zoom {
+  from { transform: scale(1.8); opacity: 0; }
+  to { transform: scale(1.05); opacity: 1; }
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}

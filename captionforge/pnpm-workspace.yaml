@@ -1,0 +1,9 @@
+settings:
+  onlyBuiltDependencies:
+    - unrs-resolver
+    - "@img/sharp-win32-x64"
+    - "@next/swc-win32-x64-msvc"
+    - esbuild
+    - prisma
+    - "@prisma/client"
+    - ffmpeg-static

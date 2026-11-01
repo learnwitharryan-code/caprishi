@@ -28,9 +28,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# local data and media files
-/data/uploads/*
-!/data/uploads/.gitkeep
-/data/renders/*
-!/data/renders/.gitkeep
+# database
+*.db
+*.db-journal
+
+# media uploads & renders
+/uploads/*
+!/uploads/.gitkeep
+/renders/*
+!/renders/.gitkeep
 /temp/*
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.mp3
