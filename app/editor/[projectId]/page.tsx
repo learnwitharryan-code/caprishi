@@ -828,176 +828,256 @@ export default function EditorPage() {
             </div>
           </div>
 
-          {/* MODE A: CAPTIONS (TRANSCRIPT, TIMINGS, SEGMENTS LIST) */}
+          {/* MODE A: CAPTIONS (TRANSCRIPT, TIMINGS, AI GENERATION) */}
           {editorMode === 'captions' && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Tracks switcher */}
-              <div className="p-3 border-b border-[#1E2026] flex items-center justify-between shrink-0">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Tracks</span>
-                <div className="flex gap-1">
-                  {tracks.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => selectActiveTrack(t)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                        activeTrack?.id === t.id
-                          ? 'bg-[#10B981] text-white shadow-sm'
-                          : 'bg-[#1E2026] text-gray-400 hover:bg-[#282B34] hover:text-white'
-                      }`}
-                    >
-                      {t.language.toUpperCase()}
-                    </button>
-                  ))}
+              {/* 1. Spoken Language & AI Caption Generation Card */}
+              <div className="p-3 border-b border-[#1E2026] bg-[#16181F]/70 space-y-2.5 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#10B981]" /> AI Captions Generator
+                  </span>
+                  {tracks.length > 0 && (
+                    <div className="flex gap-1">
+                      {tracks.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => selectActiveTrack(t)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                            activeTrack?.id === t.id
+                              ? 'bg-[#10B981] text-white shadow-sm'
+                              : 'bg-[#1E2026] text-gray-400 hover:bg-[#282B34] hover:text-white'
+                          }`}
+                        >
+                          {t.language.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
 
-              {/* Natural Pacing / Resegment Action */}
-              <div className="px-3 pt-2.5 pb-1.5 flex gap-2 shrink-0">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[10px] text-gray-400 font-semibold block mb-1">Spoken Language</label>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value as Language)}
+                      className="w-full bg-[#1A1C22] border border-[#282B34] text-white text-xs rounded-lg px-2 py-1.5 outline-none focus:border-[#10B981]"
+                    >
+                      <option value="auto">Auto Detect</option>
+                      <option value="hinglish">Hinglish (Hindi/Latin)</option>
+                      <option value="hi">Hindi (हिंदी)</option>
+                      <option value="en">English</option>
+                      <option value="ur">Urdu (اردو)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 font-semibold block mb-1">Pacing (Words/Block)</label>
+                    <select
+                      value={pacing}
+                      onChange={(e) => {
+                        const p = e.target.value as PacingPresetKey;
+                        setPacing(p);
+                        if (activeTrack) handlePacingChange(p);
+                      }}
+                      className="w-full bg-[#1A1C22] border border-[#282B34] text-white text-xs rounded-lg px-2 py-1.5 outline-none focus:border-[#10B981]"
+                    >
+                      <option value="1-2">1-2 Words (Fast)</option>
+                      <option value="2-3">2-3 Words (Viral)</option>
+                      <option value="3-5">3-5 Words (Natural)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Primary Generate / Re-generate Button */}
                 <button
-                  onClick={() => handlePacingChange('2-3')}
-                  className="flex-1 py-1.5 px-2 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-[#10B981]/50 text-emerald-400 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                  title="Rechunk subtitles to natural 2-3 word blocks"
+                  onClick={transcribe}
+                  disabled={isTranscribing}
+                  className="w-full py-2 px-3 bg-[#10B981] hover:bg-[#0EA271] disabled:bg-[#10B981]/50 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
-                  <Wand2 className="w-3.5 h-3.5" /> Rechunk (2-3 Words)
+                  <Wand2 className={`w-3.5 h-3.5 ${isTranscribing ? 'animate-spin' : ''}`} />
+                  {isTranscribing
+                    ? 'Generating Captions with Gemini AI...'
+                    : activeTrack?.segments.length
+                    ? '⚡ Re-generate AI Captions'
+                    : '⚡ Generate AI Captions'}
                 </button>
               </div>
 
-              {/* Search Filter */}
-              <div className="px-3 pb-2 shrink-0">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Search transcript..."
-                    value={transcriptSearch}
-                    onChange={(e) => setTranscriptSearch(e.target.value)}
-                    className="w-full bg-[#181A20] border border-[#22242C] rounded-lg pl-8 pr-2.5 py-1 text-xs text-white placeholder-gray-500 outline-none focus:border-[#10B981]"
-                  />
-                </div>
-              </div>
-
-              {/* Segments list */}
-              <div ref={transcriptRef} className="flex-1 overflow-y-auto p-2.5 space-y-2">
-                {activeTrack?.segments
-                  .filter((s) => !transcriptSearch || s.text.toLowerCase().includes(transcriptSearch.toLowerCase()))
-                  .map((seg, idx) => (
-                    <div
-                      key={seg.id}
-                      id={`seg-${seg.id}`}
-                      onClick={() => {
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = seg.start;
-                          setCurrentTime(seg.start);
-                        }
-                      }}
-                      className={`p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
-                        currentSegment?.id === seg.id
-                          ? 'bg-[#10B981]/10 border-[#10B981]/50 shadow-md ring-1 ring-[#10B981]/30'
-                          : 'bg-[#181A20] border-[#22242C] hover:bg-[#1E2129]'
-                      } ${isUrdu ? 'text-right' : 'text-left'}`}
-                      dir={isUrdu ? 'rtl' : 'ltr'}
+              {/* 2. Actions & Search Bar */}
+              {activeTrack && activeTrack.segments.length > 0 ? (
+                <div className="px-3 pt-2.5 pb-2 border-b border-[#1E2026] flex flex-col gap-2 shrink-0">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handlePacingChange('2-3')}
+                      className="flex-1 py-1 px-2 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-[#10B981]/50 text-emerald-400 text-[11px] font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                      title="Rechunk subtitles to natural 2-3 word blocks"
                     >
-                      {/* Header timing & actions */}
+                      <Wand2 className="w-3 h-3" /> Quick Rechunk (2-3 Words)
+                    </button>
+                    <button
+                      onClick={() => addSegment()}
+                      className="py-1 px-2.5 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] text-gray-300 hover:text-white text-[11px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all"
+                      title="Add manual caption segment"
+                    >
+                      <Plus className="w-3 h-3" /> Add
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search words in transcript..."
+                      value={transcriptSearch}
+                      onChange={(e) => setTranscriptSearch(e.target.value)}
+                      className="w-full bg-[#181A20] border border-[#22242C] rounded-lg pl-8 pr-2.5 py-1 text-xs text-white placeholder-gray-500 outline-none focus:border-[#10B981]"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 3. Segments List or Empty State */}
+              {activeTrack && activeTrack.segments.length > 0 ? (
+                <div ref={transcriptRef} className="flex-1 overflow-y-auto p-2.5 space-y-2">
+                  {activeTrack.segments
+                    .filter((s) => !transcriptSearch || s.text.toLowerCase().includes(transcriptSearch.toLowerCase()))
+                    .map((seg, idx) => (
                       <div
-                        className="flex items-center justify-between gap-1 mb-1.5 pb-1 border-b border-[#242732]"
-                        onClick={(e) => e.stopPropagation()}
+                        key={seg.id}
+                        id={`seg-${seg.id}`}
+                        onClick={() => {
+                          if (videoRef.current) {
+                            videoRef.current.currentTime = seg.start;
+                            setCurrentTime(seg.start);
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
+                          currentSegment?.id === seg.id
+                            ? 'bg-[#10B981]/10 border-[#10B981]/50 shadow-md ring-1 ring-[#10B981]/30'
+                            : 'bg-[#181A20] border-[#22242C] hover:bg-[#1E2129]'
+                        } ${isUrdu ? 'text-right' : 'text-left'}`}
+                        dir={isUrdu ? 'rtl' : 'ltr'}
                       >
-                        <span className="text-[11px] text-gray-400 font-mono">
-                          {formatTime(seg.start)} - {formatTime(seg.end)}
-                        </span>
+                        {/* Header timing & actions */}
+                        <div
+                          className="flex items-center justify-between gap-1 mb-1.5 pb-1 border-b border-[#242732]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span className="text-[11px] text-gray-400 font-mono">
+                            {formatTime(seg.start)} - {formatTime(seg.end)}
+                          </span>
 
-                        <div className="flex items-center gap-0.5">
-                          <button
-                            onClick={() => {
-                              setEditingSegId(seg.id);
-                              setEditText(seg.text);
-                            }}
-                            className="p-1 text-gray-400 hover:text-white rounded"
-                            title="Edit text"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => splitSegment(seg.id)}
-                            className="p-1 text-gray-400 hover:text-white rounded"
-                            title="Split caption"
-                          >
-                            <Scissors className="w-3 h-3" />
-                          </button>
-                          {idx < activeTrack.segments.length - 1 && (
+                          <div className="flex items-center gap-0.5">
                             <button
-                              onClick={() => mergeWithNext(seg.id)}
+                              onClick={() => {
+                                setEditingSegId(seg.id);
+                                setEditText(seg.text);
+                              }}
                               className="p-1 text-gray-400 hover:text-white rounded"
-                              title="Merge with next"
+                              title="Edit text"
                             >
-                              <GitMerge className="w-3 h-3" />
+                              <Edit2 className="w-3 h-3" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => deleteSegment(seg.id)}
-                            className="p-1 text-gray-400 hover:text-red-400 rounded"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Text representation */}
-                      {editingSegId === seg.id ? (
-                        <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            autoFocus
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveSegmentEdit(seg.id);
-                              if (e.key === 'Escape') setEditingSegId(null);
-                            }}
-                            className="flex-1 bg-[#222530] rounded px-2 py-1 text-xs outline-none border border-[#10B981] text-white"
-                            dir={isUrdu ? 'rtl' : 'ltr'}
-                          />
-                          <button
-                            onClick={() => saveSegmentEdit(seg.id)}
-                            className="px-2 py-1 bg-[#10B981] hover:bg-[#0EA271] text-white rounded text-xs font-semibold"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingSegId(null)}
-                            className="px-2 py-1 bg-[#222530] hover:bg-[#2C303E] text-gray-300 rounded text-xs"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="leading-relaxed flex flex-wrap gap-x-1.5 gap-y-1">
-                          {seg.words.map((w) => (
-                            <span
-                              key={w.id}
-                              className={`${
-                                activeWord?.id === w.id
-                                  ? 'text-yellow-400 font-bold bg-yellow-950/40 px-1 rounded'
-                                  : 'text-gray-200'
-                              } transition-colors mr-0.5`}
+                            <button
+                              onClick={() => splitSegment(seg.id)}
+                              className="p-1 text-gray-400 hover:text-white rounded"
+                              title="Split caption"
                             >
-                              {w.text}
-                            </span>
-                          ))}
+                              <Scissors className="w-3 h-3" />
+                            </button>
+                            {idx < activeTrack.segments.length - 1 && (
+                              <button
+                                onClick={() => mergeWithNext(seg.id)}
+                                className="p-1 text-gray-400 hover:text-white rounded"
+                                title="Merge with next"
+                              >
+                                <GitMerge className="w-3 h-3" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteSegment(seg.id)}
+                              className="p-1 text-gray-400 hover:text-red-400 rounded"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
 
-                {activeTrack && (
+                        {/* Text representation */}
+                        {editingSegId === seg.id ? (
+                          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              autoFocus
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveSegmentEdit(seg.id);
+                                if (e.key === 'Escape') setEditingSegId(null);
+                              }}
+                              className="flex-1 bg-[#222530] rounded px-2 py-1 text-xs outline-none border border-[#10B981] text-white"
+                              dir={isUrdu ? 'rtl' : 'ltr'}
+                            />
+                            <button
+                              onClick={() => saveSegmentEdit(seg.id)}
+                              className="px-2 py-1 bg-[#10B981] hover:bg-[#0EA271] text-white rounded text-xs font-semibold"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingSegId(null)}
+                              className="px-2 py-1 bg-[#222530] hover:bg-[#2C303E] text-gray-300 rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="leading-relaxed flex flex-wrap gap-x-1.5 gap-y-1">
+                            {seg.words.map((w) => (
+                              <span
+                                key={w.id}
+                                className={`${
+                                  activeWord?.id === w.id
+                                    ? 'text-yellow-400 font-bold bg-yellow-950/40 px-1 rounded'
+                                    : 'text-gray-200'
+                                } transition-colors mr-0.5`}
+                              >
+                                {w.text}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
                   <button
                     onClick={() => addSegment()}
                     className="w-full py-2 border border-dashed border-[#282B34] hover:border-[#10B981] rounded-xl text-xs text-gray-400 hover:text-[#10B981] flex items-center justify-center gap-1.5 transition-all mt-2"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add New Caption
                   </button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#10B981]/10 border border-[#10B981]/30 flex items-center justify-center text-[#10B981]">
+                    <Wand2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-white">No Captions Yet</h4>
+                    <p className="text-gray-400 text-xs mt-1">
+                      Choose your language above and click &quot;Generate AI Captions&quot; to transcribe this video automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={transcribe}
+                    disabled={isTranscribing}
+                    className="px-4 py-2 bg-[#10B981] hover:bg-[#0EA271] text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Wand2 className="w-4 h-4" /> Generate Captions Now
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
