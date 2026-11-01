@@ -223,9 +223,39 @@ export default function EditorPage() {
         setTracks(t);
         const active = t.find((tr) => tr.id === p.activeTrackId) ?? t[0] ?? null;
         setActiveTrack(active);
+
+        // Restore saved customized captionStyle or template
+        if (p.captionStyleJson) {
+          try {
+            const savedStyle = JSON.parse(p.captionStyleJson);
+            if (savedStyle && (savedStyle.id || savedStyle.name)) {
+              setCaptionStyle(savedStyle);
+            }
+          } catch (e) {
+            console.error('Failed to parse saved captionStyleJson', e);
+          }
+        } else if (p.templateId && TEMPLATES[p.templateId]) {
+          setCaptionStyle(TEMPLATES[p.templateId]);
+        }
       })
       .catch(() => toast({ title: 'Failed to load project', variant: 'destructive' }));
   }, [projectId, toast]);
+
+  // Debounced auto-save of caption customizations
+  useEffect(() => {
+    if (!project || !projectId) return;
+    const timer = setTimeout(() => {
+      fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: captionStyle.id,
+          captionStyleJson: JSON.stringify(captionStyle),
+        }),
+      }).catch((err) => console.error('Failed to auto-save caption style', err));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [captionStyle, projectId, project]);
 
   // Global Pointer Dragging Listener for Timeline (60fps smooth resize & move)
   useEffect(() => {

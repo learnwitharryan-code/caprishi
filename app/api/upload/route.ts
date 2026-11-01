@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
         mediaFps: info.fps,
         fileSizeBytes: BigInt(file.size),
         fileHash: hash,
-        templateId: 'word-surge',
+        templateId: 'viral-pop',
       },
     });
 

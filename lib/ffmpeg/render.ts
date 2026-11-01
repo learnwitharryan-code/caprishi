@@ -42,6 +42,41 @@ function hexToAssColor(hex: string, alpha = '00'): string {
   return `&H${alpha}${b}${g}${r}&`;
 }
 
+function resolveAssFontName(rawFamily: string, fontFace?: string): { fontName: string; isBold: number } {
+  const base = rawFamily ? rawFamily.split(',')[0].trim().replace(/['"]/g, '') : 'Poppins';
+  const face = fontFace || 'Bold';
+  const isHeavy = face.includes('Black') || face.includes('Extra Bold');
+  const isBold = face.includes('Bold') || face.includes('Black') || face.includes('SemiBold') || face.includes('Medium') || face === 'Heavy';
+
+  const lower = base.toLowerCase();
+  if (lower.includes('poppins')) {
+    if (face.includes('Black')) return { fontName: 'Poppins Black', isBold: 0 };
+    if (face.includes('Extra Bold')) return { fontName: 'Poppins ExtraBold', isBold: 0 };
+    return { fontName: 'Poppins', isBold: -1 };
+  }
+  if (lower.includes('montserrat')) {
+    if (face.includes('Black')) return { fontName: 'Montserrat Black', isBold: 0 };
+    if (face.includes('Extra Bold')) return { fontName: 'Montserrat ExtraBold', isBold: 0 };
+    return { fontName: 'Montserrat', isBold: -1 };
+  }
+  if (lower.includes('anton')) return { fontName: 'Anton', isBold: 0 };
+  if (lower.includes('bebas')) return { fontName: 'Bebas Neue', isBold: 0 };
+  if (lower.includes('space mono')) return { fontName: 'Space Mono', isBold: -1 };
+  if (lower.includes('righteous')) return { fontName: 'Righteous', isBold: 0 };
+  if (lower.includes('bangers')) return { fontName: 'Bangers', isBold: 0 };
+  if (lower.includes('playfair')) return { fontName: 'Playfair Display', isBold: isBold ? -1 : 0 };
+  if (lower.includes('fredoka')) return { fontName: 'Fredoka', isBold: isBold ? -1 : 0 };
+  if (lower.includes('caveat')) return { fontName: 'Caveat', isBold: isBold ? -1 : 0 };
+  if (lower.includes('rozha')) return { fontName: 'Rozha One', isBold: 0 };
+  if (lower.includes('mukta')) return { fontName: 'Mukta', isBold: -1 };
+  if (lower.includes('noto sans devanagari')) return { fontName: 'Noto Sans Devanagari', isBold: -1 };
+  if (lower.includes('outfit')) return { fontName: 'Outfit', isBold: isBold ? -1 : 0 };
+  if (lower.includes('oswald')) return { fontName: 'Oswald', isBold: isBold ? -1 : 0 };
+  if (lower.includes('inter')) return { fontName: 'Inter', isBold: isBold ? -1 : 0 };
+
+  return { fontName: base || 'Poppins', isBold: isBold ? -1 : 0 };
+}
+
 /**
  * Generate an Advanced SubStation Alpha (.ass) file with pixel-perfect match
  * to the web editor's screen preview (fonts, position, scale, colors, stroke, shadow, glow, spacing).
@@ -60,25 +95,25 @@ export function generateAssFile(
   const scaleMultiplier = style.scale || 1.0;
   const fontSize = Math.max(16, Math.round(baseSize * scaleRatio * scaleMultiplier));
 
-  // Clean font name (e.g. "Poppins, sans-serif" -> "Poppins")
-  const rawFont = style.fontFamily ? style.fontFamily.split(',')[0].trim().replace(/['"]/g, '') : 'Poppins';
-  const fontName = rawFont || 'Poppins';
+  // Clean font name and resolve exact TTF family
+  const { fontName, isBold } = resolveAssFontName(style.fontFamily, style.fontFace);
 
-  // Colors
+  // Normal Word Color (Solid or primary gradient stop)
   const normalColorHex = style.colorType === 'gradient'
     ? (style.gradientColor1 || '#FACC15')
     : (style.textColor || '#FFFFFF');
   const primaryColor = hexToAssColor(normalColorHex);
 
-  const activeColorHex = style.emphasisColorType === 'gradient'
+  // Default active word color fallback
+  const defaultActiveColorHex = style.emphasisColorType === 'gradient'
     ? (style.emphasisGradient1 || '#FACC15')
     : (style.highlightColor || '#FFE600');
-  const highlightColor = hexToAssColor(activeColorHex);
+  const defaultHighlightColor = hexToAssColor(defaultActiveColorHex);
 
   // Stroke / Outline
   const outlineColor = hexToAssColor(style.strokeColor || '#000000');
   const outlineWidth = style.strokeEnabled
-    ? Math.max(1, Math.round((style.strokeWidth || 2) * (resHeight / 710) * 0.9))
+    ? Math.max(1, Math.round((style.strokeWidth || 2) * scaleRatio * 0.9))
     : 0;
 
   // Drop Shadow / 3D Depth
@@ -86,11 +121,11 @@ export function generateAssFile(
   let backColor = '&H00000000&';
 
   if (style.threeDDepthEnabled) {
-    shadowDist = Math.max(2, Math.round((style.threeDDepthY || 4) * (resHeight / 710)));
+    shadowDist = Math.max(2, Math.round((style.threeDDepthY || 4) * scaleRatio));
     backColor = hexToAssColor(style.threeDDepthColor || '#000000', '00');
   } else if (style.dropShadowEnabled) {
     const rawDist = Math.hypot(style.dropShadowX || 0, style.dropShadowY || 0);
-    shadowDist = Math.max(1, Math.round((rawDist || 2) * (resHeight / 710)));
+    shadowDist = Math.max(1, Math.round((rawDist || 2) * scaleRatio));
     const alphaVal = Math.round((1 - (style.dropShadowOpacity ?? 63) / 100) * 255);
     const alphaHex = Math.max(0, Math.min(255, alphaVal)).toString(16).padStart(2, '0').toUpperCase();
     backColor = hexToAssColor(style.dropShadowColor || '#000000', alphaHex);
@@ -100,13 +135,12 @@ export function generateAssFile(
 
   const borderStyle = style.bgBoxEnabled ? 3 : 1; // 3 = opaque box, 1 = outline + shadow
 
-  // Font face: Bold, Italic, Underline
-  const isBold = !style.fontFace || style.fontFace.includes('Bold') || style.fontFace.includes('Black') || style.fontFace.includes('SemiBold') || style.fontFace.includes('Medium') ? -1 : 0;
+  // Font face: Italic, Underline
   const isItalic = (style.italic || (style.fontFace && style.fontFace.includes('Italic'))) ? -1 : 0;
   const isUnderline = style.underline ? -1 : 0;
 
   // Letter spacing
-  const letterSpacing = Math.round((style.letterSpacing || 0) * (resHeight / 710));
+  const letterSpacing = Math.round((style.letterSpacing || 0) * scaleRatio);
 
   // Exact Position coordinates (X & Y %) matching the screen
   const posX = Math.round(((style.positionX ?? 50) / 100) * resWidth);
@@ -124,7 +158,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColor},${highlightColor},${outlineColor},${backColor},${isBold},${isItalic},${isUnderline},0,100,100,${letterSpacing},0,${borderStyle},${outlineWidth},${shadowDist},5,20,20,20,1
+Style: Default,${fontName},${fontSize},${primaryColor},${defaultHighlightColor},${outlineColor},${backColor},${isBold},${isItalic},${isUnderline},0,100,100,${letterSpacing},0,${borderStyle},${outlineWidth},${shadowDist},5,20,20,20,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -132,14 +166,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   const dialogues: string[] = [];
 
-  const transformWord = (raw: string) => {
+  const transformWord = (raw: string, isActive: boolean) => {
     if (!raw) return '';
-    const isUpper = style.styles === 'uppercase' || (style as any).textTransform === 'uppercase';
-    const isLower = style.styles === 'lowercase';
-    const isCap = style.styles === 'capitalize';
-    if (isUpper) return raw.toUpperCase();
-    if (isLower) return raw.toLowerCase();
-    if (isCap) return raw.charAt(0).toUpperCase() + raw.slice(1);
+    const styleMode = (isActive && style.emphasisStyles && style.emphasisStyles !== 'none')
+      ? style.emphasisStyles
+      : style.styles;
+    if (styleMode === 'uppercase') return raw.toUpperCase();
+    if (styleMode === 'lowercase') return raw.toLowerCase();
+    if (styleMode === 'capitalize') return raw.charAt(0).toUpperCase() + raw.slice(1);
     return raw;
   };
 
@@ -150,11 +184,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     separator = '\\h'.repeat(spaceCount) + ' ';
   }
 
+  // Inactive word dimming alpha calculation
+  let dimAlphaHex = '00';
+  const hasDim = style.dimInactive !== undefined && style.dimInactive < 1 && style.mode !== 'fill';
+  if (hasDim) {
+    const alphaVal = Math.round((1 - (style.dimInactive ?? 1)) * 255);
+    dimAlphaHex = Math.max(0, Math.min(255, alphaVal)).toString(16).padStart(2, '0').toUpperCase();
+  }
+
   for (const seg of segments) {
     if (!seg.words || seg.words.length === 0) {
       const start = formatAssTime(seg.start);
       const end = formatAssTime(seg.end);
-      const text = transformWord(seg.text);
+      const text = transformWord(seg.text, false);
       dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an5\\pos(${posX},${posY})${wrapTag}}${text}`);
       continue;
     }
@@ -167,17 +209,60 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const end = formatAssTime(nextW ? nextW.start : seg.end);
 
       // Build text with active word highlighted
-      const wordsText = seg.words.map((w, idx) => {
-        const text = transformWord(w.text);
-        if (idx === i) {
-          const scaleInt = Math.round((style.emphasisSize || 1.1) * 100);
-          const glowTag = style.emphasisGlow ? `\\blur${Math.max(2, Math.round(3 * scaleRatio))}` : '';
-          return `{\\c${highlightColor}\\fscx${scaleInt}\\fscy${scaleInt}${glowTag}}${text}{\\c${primaryColor}\\fscx100\\fscy100\\blur0}`;
-        }
-        return text;
-      });
+      const wordsElements: string[] = [];
 
-      const lineContent = wordsText.join(separator);
+      for (let wIdx = 0; wIdx < seg.words.length; wIdx++) {
+        // Typewriter mode hides future words
+        if (style.mode === 'type' && wIdx > i) {
+          continue;
+        }
+
+        const isCurrentActive = wIdx === i;
+        const isFillActive = style.mode === 'fill' && wIdx <= i;
+        const isActive = isCurrentActive || isFillActive;
+        const w = seg.words[wIdx];
+        const text = transformWord(w.text, isActive);
+
+        if (isActive) {
+          // Resolve highlight color (multi-color cycle or solid)
+          let activeColorHex = defaultActiveColorHex;
+          if (style.highlightColors && style.highlightColors.length > 0) {
+            activeColorHex = style.highlightColors[wIdx % style.highlightColors.length];
+          }
+          const wordHighlightColor = hexToAssColor(activeColorHex);
+
+          // Resolve active sticker background box
+          let activeBg = style.highlightBg;
+          if (style.highlightBgs && style.highlightBgs.length > 0) {
+            activeBg = style.highlightBgs[wIdx % style.highlightBgs.length];
+          }
+
+          const scaleInt = (style.emphasisSize && style.emphasisSize > 1.0)
+            ? Math.round(style.emphasisSize * 100)
+            : 100;
+          const scaleTag = scaleInt !== 100 ? `\\fscx${scaleInt}\\fscy${scaleInt}` : '';
+          const glowTag = style.emphasisGlow ? `\\blur${Math.max(2, Math.round(4 * scaleRatio))}` : '';
+          const rotTag = style.emphasisRotation ? `\\frz${style.emphasisRotation}` : '';
+
+          if (activeBg) {
+            // Sticker box badge around the active word
+            const badgeColor = hexToAssColor(activeBg);
+            const badgeBord = Math.max(8, Math.round(14 * scaleRatio));
+            wordsElements.push(`{\\1a&H00&\\3a&H00&\\c${wordHighlightColor}\\3c${badgeColor}\\bord${badgeBord}${scaleTag}${glowTag}${rotTag}}${text}{\\c${primaryColor}\\3c${outlineColor}\\bord${outlineWidth}\\fscx100\\fscy100\\blur0\\frz0}`);
+          } else {
+            wordsElements.push(`{\\1a&H00&\\3a&H00&\\c${wordHighlightColor}${scaleTag}${glowTag}${rotTag}}${text}{\\c${primaryColor}\\fscx100\\fscy100\\blur0\\frz0}`);
+          }
+        } else {
+          // Inactive word: apply dimming if configured
+          if (hasDim) {
+            wordsElements.push(`{\\1a&H${dimAlphaHex}&\\3a&H${dimAlphaHex}&\\c${primaryColor}}${text}{\\1a&H00&\\3a&H00&}`);
+          } else {
+            wordsElements.push(text);
+          }
+        }
+      }
+
+      const lineContent = wordsElements.join(separator);
       dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an5\\pos(${posX},${posY})${wrapTag}}${lineContent}`);
     }
   }

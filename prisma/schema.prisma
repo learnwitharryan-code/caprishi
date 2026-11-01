@@ -71,7 +71,8 @@ model Project {
   fileSizeBytes  BigInt   @default(0)
   tracksJson     String   @default("[]")
   activeTrackId  String?
-  templateId     String   @default("word-surge")
+  templateId     String   @default("viral-pop")
+  captionStyleJson String?
   renderJobsJson String   @default("[]")
   fileHash       String?
   createdAt      DateTime @default(now())

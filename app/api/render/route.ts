@@ -58,6 +58,19 @@ export async function POST(req: NextRequest) {
     const outputFileName = `render_${projectId}_${resolution}_${Date.now()}.mp4`;
     const outputPath = path.join(renderDir, outputFileName);
 
+    // Save active customized style to project record
+    try {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: {
+          templateId: style.id,
+          captionStyleJson: JSON.stringify(style),
+        },
+      });
+    } catch (e) {
+      console.warn('[render] Could not persist style to project', e);
+    }
+
     await renderVideo(
       project.mediaPath,
       segmentsToRender,
