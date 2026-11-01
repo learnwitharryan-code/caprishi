@@ -43,15 +43,17 @@ export default function HomePage() {
           xhr.open('POST', '/api/upload');
           xhr.onload = () => {
             if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
-            else {
+            else if (xhr.status === 413) {
+              reject(new Error('File too large for Vercel (Vercel max 4.5MB). Please use localhost for unlimited video sizes.'));
+            } else {
               try {
-                reject(new Error(JSON.parse(xhr.responseText).error ?? 'Upload failed'));
+                reject(new Error(JSON.parse(xhr.responseText).error ?? `Upload failed (${xhr.status})`));
               } catch {
-                reject(new Error('Upload failed'));
+                reject(new Error(`Upload failed (Status ${xhr.status})`));
               }
             }
           };
-          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.onerror = () => reject(new Error('Network error: Vercel rejected the connection. This happens if the file exceeds Vercel\'s 4.5MB limit, or if "Deployment Protection" is ON in Vercel settings. Please use Localhost for full unlimited editing.'));
           xhr.send(formData);
         });
         setProgress(100);

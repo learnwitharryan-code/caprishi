@@ -66,7 +66,9 @@ export async function POST(req: NextRequest) {
       segmentsToRender = activeTrack.segments;
     }
 
-    const renderDir = path.resolve(process.env.RENDER_DIR || './renders');
+    const renderDir = process.env.VERCEL
+      ? path.join('/tmp', 'renders')
+      : path.resolve(process.env.RENDER_DIR || './renders');
     if (!fs.existsSync(renderDir)) {
       fs.mkdirSync(renderDir, { recursive: true });
     }

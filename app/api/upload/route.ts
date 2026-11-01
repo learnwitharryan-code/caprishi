@@ -7,7 +7,9 @@ import { probeMedia } from '@/lib/ffmpeg/probe';
 import { extractAudio } from '@/lib/ffmpeg/extract-audio';
 import { prisma } from '@/lib/db';
 
-const UPLOAD_DIR = path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? './uploads');
+const UPLOAD_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'uploads')
+  : path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? './uploads');
 const MAX_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE_MB ?? '500') * 1024 * 1024;
 const ALLOWED = new Set([
   'video/mp4',
