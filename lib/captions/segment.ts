@@ -119,7 +119,118 @@ export function resegmentSegments(
   rules: SegmentationRules = DEFAULT_RULES
 ): CaptionSegment[] {
   const allWords = segments.flatMap(s => s.words || []);
-  return resegmentWords(allWords, language, rules);
+  const resegmented = resegmentWords(allWords, language, rules);
+  return syncWordsToTimeline(resegmented);
+}
+
+/**
+ * Calculates natural phonetic speech weight for a word based on character length,
+ * vowel/syllable density, and punctuation pauses.
+ */
+export function computeWordPhoneticWeight(wordText: string): number {
+  if (!wordText) return 1;
+  const clean = wordText.trim().replace(/[^\w\u0600-\u06FF\u0900-\u097F]/g, '');
+  if (!clean) return 1;
+
+  // Syllables roughly correlate to vowel clusters (Latin + Devanagari + Arabic)
+  const vowels = (clean.match(/[aeiouyāīūēōअआइईउऊएऐओऔ]/gi) || []).length;
+  // Length + vowel density with minimum 1.0
+  const baseWeight = Math.max(1, clean.length * 0.7 + vowels * 0.85);
+
+  // Pause punctuation weight: natural holding pause at clause/sentence boundaries
+  const hasComma = /[,،]/.test(wordText);
+  const hasFullStop = /[.?!।؟]/.test(wordText);
+  if (hasFullStop) return baseWeight * 1.35;
+  if (hasComma) return baseWeight * 1.18;
+  return baseWeight;
+}
+
+/**
+ * Full Word-to-Word Sync Engine:
+ * 1. Enforces strict chronological order of segments without overlaps.
+ * 2. Guarantees word 0 begins at seg.start and last word terminates at seg.end.
+ * 3. Eliminates all dead gaps between words (word[i].end === word[i+1].start).
+ * 4. Distributes word durations proportionally using natural phonetic/syllable weights
+ *    so every word aligns naturally with human speech cadence.
+ */
+export function syncWordsToTimeline(segments: CaptionSegment[]): CaptionSegment[] {
+  if (!segments || segments.length === 0) return [];
+
+  // Sort segments by start time
+  const sorted = [...segments].sort((a, b) => a.start - b.start);
+
+  return sorted.map((seg, segIdx) => {
+    let clampedStart = Math.max(0, Math.round(seg.start * 1000) / 1000);
+    let clampedEnd = Math.max(clampedStart + 0.2, Math.round(seg.end * 1000) / 1000);
+
+    const nextSeg = sorted[segIdx + 1];
+    if (nextSeg && clampedEnd > nextSeg.start - 0.04) {
+      clampedEnd = Math.max(clampedStart + 0.2, Math.round((nextSeg.start - 0.04) * 1000) / 1000);
+    }
+
+    const segDuration = Math.max(0.2, clampedEnd - clampedStart);
+
+    // Ensure words exist
+    let words = seg.words && seg.words.length > 0
+      ? [...seg.words]
+      : seg.text.split(/\s+/).filter(Boolean).map(text => ({ id: uuid(), text, start: clampedStart, end: clampedEnd }));
+
+    if (words.length === 0) {
+      words = [{ id: uuid(), text: seg.text || '...', start: clampedStart, end: clampedEnd }];
+    }
+
+    if (words.length === 1) {
+      const syncedWords = [{
+        ...words[0],
+        start: clampedStart,
+        end: clampedEnd,
+      }];
+      return {
+        ...seg,
+        start: clampedStart,
+        end: clampedEnd,
+        words: syncedWords,
+      };
+    }
+
+    // Multi-word sync: compute weights
+    const weights = words.map(w => computeWordPhoneticWeight(w.text));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
+
+    let currTime = clampedStart;
+    const syncedWords: CaptionWord[] = [];
+
+    for (let i = 0; i < words.length; i++) {
+      const isLast = i === words.length - 1;
+      const wDur = isLast
+        ? Math.max(0.05, clampedEnd - currTime)
+        : Math.round(((weights[i] / totalWeight) * segDuration) * 1000) / 1000;
+
+      const wStart = currTime;
+      const wEnd = isLast ? clampedEnd : Math.round((currTime + wDur) * 1000) / 1000;
+
+      syncedWords.push({
+        id: words[i].id || uuid(),
+        text: words[i].text,
+        start: wStart,
+        end: Math.max(wStart + 0.05, wEnd),
+      });
+
+      currTime = wEnd;
+    }
+
+    // Ensure last word terminates exactly at clampedEnd
+    if (syncedWords.length > 0) {
+      syncedWords[syncedWords.length - 1].end = clampedEnd;
+    }
+
+    return {
+      ...seg,
+      start: clampedStart,
+      end: clampedEnd,
+      words: syncedWords,
+    };
+  });
 }
 
 /**
@@ -145,5 +256,6 @@ export function geminiToCaptionTrack(
   }
 
   // Re-segment with pacing rules
-  return resegmentWords(rawWords, language, rules);
+  const segmented = resegmentWords(rawWords, language, rules);
+  return syncWordsToTimeline(segmented);
 }
