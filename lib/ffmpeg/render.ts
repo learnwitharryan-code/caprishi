@@ -213,8 +213,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for (let i = 0; i < seg.words.length; i++) {
       const activeW = seg.words[i];
       const nextW = seg.words[i + 1];
-      const start = formatAssTime(activeW.start);
-      const end = formatAssTime(nextW ? nextW.start : seg.end);
+      const start = formatAssTime(i === 0 ? Math.min(seg.start, activeW.start) : activeW.start);
+      const end = formatAssTime(i === seg.words.length - 1 ? Math.max(seg.end, activeW.end) : (nextW ? nextW.start : activeW.end));
 
       // Build text with active word highlighted
       const wordsElements: string[] = [];

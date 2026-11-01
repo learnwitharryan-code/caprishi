@@ -36,6 +36,7 @@ import {
   Search,
   Minimize2,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { v4 as uuid } from 'uuid';
@@ -45,6 +46,12 @@ import {
   PacingPresetKey,
   resegmentSegments,
 } from '@/lib/captions/segment';
+import {
+  generateSRT,
+  generateVTT,
+  generateTXT,
+  generateJSON,
+} from '@/lib/captions/srt';
 import {
   TEMPLATES,
   DEFAULT_STYLE,
@@ -259,6 +266,37 @@ export default function EditorPage() {
     return () => clearTimeout(timer);
   }, [captionStyle, isStyleLoaded, projectId, project]);
 
+  // Invalidate previous render whenever captions, style, or resolution change
+  // so export buttons refresh immediately and users never download stale renders
+  const prevStyleJsonRef = useRef<string>('');
+  const prevTracksJsonRef = useRef<string>('');
+  const prevResRef = useRef<string>('1080p');
+
+  useEffect(() => {
+    if (!isStyleLoaded) return;
+    const styleJson = JSON.stringify(captionStyle);
+    const tracksJson = JSON.stringify(tracks);
+    const res = renderResolution;
+
+    if (!prevStyleJsonRef.current) {
+      prevStyleJsonRef.current = styleJson;
+      prevTracksJsonRef.current = tracksJson;
+      prevResRef.current = res;
+      return;
+    }
+
+    if (
+      prevStyleJsonRef.current !== styleJson ||
+      prevTracksJsonRef.current !== tracksJson ||
+      prevResRef.current !== res
+    ) {
+      prevStyleJsonRef.current = styleJson;
+      prevTracksJsonRef.current = tracksJson;
+      prevResRef.current = res;
+      setRenderDownloadUrl(null);
+    }
+  }, [captionStyle, tracks, renderResolution, isStyleLoaded]);
+
   // Global Pointer Dragging Listener for Timeline (60fps smooth resize & move)
   useEffect(() => {
     if (!timelineDrag) return;
@@ -428,18 +466,39 @@ export default function EditorPage() {
     }
   };
 
-  const downloadExport = async (format: 'srt' | 'vtt' | 'txt' | 'json') => {
-    if (!activeTrack) return;
-    const res = await fetch(
-      `/api/export/${projectId}?trackId=${activeTrack.id}&format=${format}`
-    );
-    const blob = await res.blob();
+  const downloadExport = (format: 'srt' | 'vtt' | 'txt' | 'json') => {
+    if (!activeTrack || !activeTrack.segments.length) {
+      toast({ title: 'No captions available to export', variant: 'destructive' });
+      return;
+    }
+    const segs = activeTrack.segments;
+    let content = '';
+    if (format === 'srt') content = generateSRT(segs);
+    else if (format === 'vtt') content = generateVTT(segs);
+    else if (format === 'txt') content = generateTXT(segs);
+    else if (format === 'json') content = generateJSON(segs);
+
+    const mimeTypes: Record<string, string> = {
+      srt: 'text/plain;charset=utf-8',
+      vtt: 'text/vtt;charset=utf-8',
+      txt: 'text/plain;charset=utf-8',
+      json: 'application/json;charset=utf-8',
+    };
+    const blob = new Blob([content], { type: mimeTypes[format] || 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `captions_${activeTrack.language}.${format}`;
+    const safeName = (project?.name || 'captions').replace(/[^a-zA-Z0-9_-]/g, '_');
+    a.download = `${safeName}_${activeTrack.language}.${format}`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    toast({
+      title: `Exported .${format.toUpperCase()}`,
+      description: `Downloaded ${segs.length} captions directly from live timeline.`,
+    });
   };
 
   const handleRenderVideo = async () => {
@@ -489,6 +548,7 @@ export default function EditorPage() {
   };
 
   const persistTracks = async (newTracks: CaptionTrack[]) => {
+    setRenderDownloadUrl(null);
     setTracks(newTracks);
     if (activeTrack) {
       const updatedActive = newTracks.find((t) => t.id === activeTrack.id) || newTracks[0] || null;
@@ -3645,7 +3705,10 @@ export default function EditorPage() {
               </label>
               <select
                 value={renderResolution}
-                onChange={(e) => setRenderResolution(e.target.value as RenderResolution)}
+                onChange={(e) => {
+                  setRenderResolution(e.target.value as RenderResolution);
+                  setRenderDownloadUrl(null);
+                }}
                 className="w-full bg-[#1F222B] text-white rounded-lg px-3 py-2 text-xs outline-none border border-[#2F3341]"
               >
                 <option value="1080p">⚡ 1080p (Full HD - Recommended)</option>
@@ -3655,14 +3718,46 @@ export default function EditorPage() {
               </select>
             </div>
 
-            <Button
-              onClick={handleRenderVideo}
-              disabled={isRendering || !activeTrack}
-              className="w-full bg-[#00B87C] hover:bg-[#00A36D] text-white font-bold text-xs py-2.5 rounded-lg shadow-lg"
-            >
-              <Film className="w-4 h-4 mr-2" />
-              {isRendering ? `Rendering in ${renderResolution}...` : `Burn Captions & Render (${renderResolution})`}
-            </Button>
+            {/* Live Canvas & Timeline Synced Status */}
+            <div className="bg-[#12141A] border border-[#252834] rounded-xl p-3 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-gray-300 font-medium">Timeline Synced:</span>
+              </div>
+              <span className="text-[#10B981] font-bold text-[11px] truncate max-w-[200px]">
+                {activeTrack?.segments.length || 0} Captions • {captionStyle.name || 'Custom'}
+              </span>
+            </div>
+
+            {renderDownloadUrl ? (
+              <div className="space-y-2">
+                <a
+                  href={renderDownloadUrl}
+                  download
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-[#10B981] hover:bg-[#0EA271] text-white font-bold text-xs shadow-lg transition-all animate-bounce"
+                >
+                  <Download className="w-4 h-4" /> Download Rendered Video ({renderResolution})
+                </a>
+                <Button
+                  onClick={handleRenderVideo}
+                  disabled={isRendering || !activeTrack}
+                  variant="outline"
+                  className="w-full bg-[#1F222B] hover:bg-[#2A2E3B] text-gray-300 font-semibold text-xs py-2 rounded-lg border border-[#2F3341]"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                  Re-Render with Latest Edits
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={handleRenderVideo}
+                disabled={isRendering || !activeTrack}
+                className="w-full bg-[#00B87C] hover:bg-[#00A36D] text-white font-bold text-xs py-2.5 rounded-lg shadow-lg"
+              >
+                <Film className="w-4 h-4 mr-2" />
+                {isRendering ? `Rendering in ${renderResolution}...` : `Burn Captions & Render (${renderResolution})`}
+              </Button>
+            )}
 
             {isRendering && (
               <div className="space-y-1">
@@ -3673,16 +3768,6 @@ export default function EditorPage() {
               </div>
             )}
 
-            {renderDownloadUrl && (
-              <a
-                href={renderDownloadUrl}
-                download
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-[#10B981] hover:bg-[#0EA271] text-white font-bold text-xs shadow-lg transition-all animate-bounce"
-              >
-                <Download className="w-4 h-4" /> Download Rendered Video
-              </a>
-            )}
-
             <div className="pt-2 border-t border-[#282B36] space-y-1.5">
               <span className="text-gray-400 text-xs font-semibold block">Download Subtitle Files</span>
               <div className="grid grid-cols-4 gap-1.5">
@@ -3691,7 +3776,7 @@ export default function EditorPage() {
                     key={fmt}
                     onClick={() => downloadExport(fmt)}
                     disabled={!activeTrack}
-                    className="py-1.5 rounded bg-[#1F222B] hover:bg-[#2A2E3B] text-gray-300 text-xs font-semibold border border-[#2F3341] transition-all"
+                    className="py-1.5 rounded bg-[#1F222B] hover:bg-[#2A2E3B] text-gray-300 text-xs font-semibold border border-[#2F3341] transition-all hover:text-white hover:border-[#10B981]"
                   >
                     .{fmt.toUpperCase()}
                   </button>
