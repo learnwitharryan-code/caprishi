@@ -10,7 +10,7 @@ export const GeminiSegmentSchema = z.object({
   text: z.string(),
   start: z.number(),
   end: z.number(),
-  words: z.array(GeminiWordSchema),
+  words: z.array(GeminiWordSchema).default([]),
 });
 
 export const GeminiTranscriptionSchema = z.object({

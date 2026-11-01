@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { CaptionSegment, CaptionWord, Language } from '@/types/caption';
 import { GeminiTranscription } from '@/lib/gemini/schemas';
+import { sanitizeToHinglish } from './transliterate';
 
 export interface SegmentationRules {
   minWords?: number;
@@ -45,10 +46,19 @@ export function resegmentWords(
   const pauseThreshold = rules.pauseThresholdSeconds ?? 0.35;
   const endPadding = rules.endPaddingSeconds ?? 0.08;
 
-  // Clean and sort words by start time
+  // Stable sort by start time while preserving speech sequence order
   const cleanWords = words
-    .filter(w => w && w.text && w.text.trim().length > 0)
-    .sort((a, b) => a.start - b.start);
+    .map((w, index) => ({ w, index }))
+    .filter(({ w }) => w && w.text && w.text.trim().length > 0)
+    .sort((a, b) => {
+      const diff = a.w.start - b.w.start;
+      if (Math.abs(diff) > 0.01) return diff;
+      return a.index - b.index;
+    })
+    .map(({ w }) => {
+      const text = (language === 'hi' || language === 'ur') ? w.text : sanitizeToHinglish(w.text);
+      return { ...w, text };
+    });
 
   const segments: CaptionSegment[] = [];
   let currentGroup: CaptionWord[] = [];
@@ -76,15 +86,22 @@ export function resegmentWords(
     if (currentGroup.length > 0 && (shouldSplit || pauseOccurred)) {
       const segStart = currentGroup[0].start;
       const lastWord = currentGroup[currentGroup.length - 1];
-      // Hold caption slightly past last word, but never overlap next word start
-      const segEnd = Math.min(lastWord.end + endPadding, word.start - 0.02);
+      const minEnd = segStart + 0.2;
+      const candidateEnd = Math.max(lastWord.end + endPadding, minEnd);
+      // Ensure we don't overlap with the next word if it is ahead
+      const segEnd = word.start > segStart + 0.05
+        ? Math.min(candidateEnd, word.start - 0.02)
+        : Math.max(lastWord.end, minEnd);
+
+      const roundedStart = Math.round(segStart * 1000) / 1000;
+      const roundedEnd = Math.round(Math.max(roundedStart + 0.2, segEnd) * 1000) / 1000;
 
       segments.push({
         id: uuid(),
         language,
         text: currentGroup.map(w => w.text).join(' '),
-        start: Math.round(segStart * 1000) / 1000,
-        end: Math.round(Math.max(segEnd, lastWord.end) * 1000) / 1000,
+        start: roundedStart,
+        end: roundedEnd,
         words: [...currentGroup],
       });
       currentGroup = [];
@@ -97,12 +114,14 @@ export function resegmentWords(
   if (currentGroup.length > 0) {
     const segStart = currentGroup[0].start;
     const lastWord = currentGroup[currentGroup.length - 1];
+    const roundedStart = Math.round(segStart * 1000) / 1000;
+    const roundedEnd = Math.round(Math.max(roundedStart + 0.25, lastWord.end + endPadding) * 1000) / 1000;
     segments.push({
       id: uuid(),
       language,
       text: currentGroup.map(w => w.text).join(' '),
-      start: Math.round(segStart * 1000) / 1000,
-      end: Math.round((lastWord.end + endPadding) * 1000) / 1000,
+      start: roundedStart,
+      end: roundedEnd,
       words: [...currentGroup],
     });
   }
@@ -120,7 +139,7 @@ export function resegmentSegments(
 ): CaptionSegment[] {
   const allWords = segments.flatMap(s => s.words || []);
   const resegmented = resegmentWords(allWords, language, rules);
-  return syncWordsToTimeline(resegmented);
+  return syncWordsToTimeline(resegmented, 0);
 }
 
 /**
@@ -146,13 +165,12 @@ export function computeWordPhoneticWeight(wordText: string): number {
 }
 
 /**
- * Full Word-to-Word Sync Engine:
- * 1. Enforces strict chronological order of segments without overlaps.
- * 2. Applies lead offset (e.g. -0.18s to counteract Gemini speech delay and speech onset lag).
- * 3. Guarantees word 0 begins at seg.start and last word terminates at seg.end.
- * 4. Eliminates all dead gaps between words (word[i].end === word[i+1].start).
- * 5. Distributes word durations proportionally using natural phonetic/syllable weights
- *    so every word aligns naturally with human speech cadence.
+ * Precision Word-to-Word Sync Engine:
+ * 1. Preserves acoustic segment boundaries (seg.start, seg.end) to prevent any cumulative drift across the video!
+ * 2. Word 0 begins at seg.start and the last word terminates exactly at seg.end.
+ * 3. Eliminates all dead gaps between words (word[i].end === word[i+1].start).
+ * 4. Distributes word durations proportionally using natural phonetic/syllable weights.
+ * 5. Sanitizes any Devanagari to pure Hinglish when in Hinglish or English mode.
  */
 export function syncWordsToTimeline(
   segments: CaptionSegment[],
@@ -164,29 +182,39 @@ export function syncWordsToTimeline(
   const sorted = [...segments].sort((a, b) => a.start - b.start);
 
   return sorted.map((seg, segIdx) => {
-    let rawStart = seg.start + leadOffsetSeconds;
-    let rawEnd = seg.end + leadOffsetSeconds;
+    // Only apply leadOffsetSeconds if explicitly provided non-zero, clamping cleanly
+    const rawStart = leadOffsetSeconds !== 0 ? Math.max(0, seg.start + leadOffsetSeconds) : seg.start;
+    const rawEnd = leadOffsetSeconds !== 0 ? Math.max(rawStart + 0.25, seg.end + leadOffsetSeconds) : seg.end;
 
-    let clampedStart = Math.max(0, Math.round(rawStart * 1000) / 1000);
-    let clampedEnd = Math.max(clampedStart + 0.25, Math.round(rawEnd * 1000) / 1000);
+    const clampedStart = Math.round(rawStart * 1000) / 1000;
+    let clampedEnd = Math.round(Math.max(clampedStart + 0.25, rawEnd) * 1000) / 1000;
 
+    // Guard against overlap with next segment without shrinking unnaturally
     const nextSeg = sorted[segIdx + 1];
     if (nextSeg) {
-      const nextRawStart = nextSeg.start + leadOffsetSeconds;
-      if (clampedEnd > nextRawStart - 0.03) {
-        clampedEnd = Math.max(clampedStart + 0.2, Math.round((nextRawStart - 0.03) * 1000) / 1000);
+      const nextStart = leadOffsetSeconds !== 0 ? Math.max(0, nextSeg.start + leadOffsetSeconds) : nextSeg.start;
+      if (clampedEnd > nextStart) {
+        clampedEnd = Math.max(clampedStart + 0.15, Math.round(nextStart * 1000) / 1000);
       }
     }
 
-    const segDuration = Math.max(0.2, clampedEnd - clampedStart);
+    const segDuration = Math.max(0.15, clampedEnd - clampedStart);
+
+    // Sanitize segment text
+    const cleanText = (seg.language === 'hi' || seg.language === 'ur')
+      ? seg.text
+      : sanitizeToHinglish(seg.text);
 
     // Ensure words exist
     let words = seg.words && seg.words.length > 0
-      ? [...seg.words]
-      : seg.text.split(/\s+/).filter(Boolean).map(text => ({ id: uuid(), text, start: clampedStart, end: clampedEnd }));
+      ? seg.words.map(w => ({
+          ...w,
+          text: (seg.language === 'hi' || seg.language === 'ur') ? w.text : sanitizeToHinglish(w.text)
+        }))
+      : cleanText.split(/\s+/).filter(Boolean).map(text => ({ id: uuid(), text, start: clampedStart, end: clampedEnd }));
 
     if (words.length === 0) {
-      words = [{ id: uuid(), text: seg.text || '...', start: clampedStart, end: clampedEnd }];
+      words = [{ id: uuid(), text: cleanText || '...', start: clampedStart, end: clampedEnd }];
     }
 
     if (words.length === 1) {
@@ -197,13 +225,14 @@ export function syncWordsToTimeline(
       }];
       return {
         ...seg,
+        text: cleanText,
         start: clampedStart,
         end: clampedEnd,
         words: syncedWords,
       };
     }
 
-    // Multi-word sync: compute weights
+    // Multi-word sync: compute phonetic syllable weights
     const weights = words.map(w => computeWordPhoneticWeight(w.text));
     const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
 
@@ -236,6 +265,7 @@ export function syncWordsToTimeline(
 
     return {
       ...seg,
+      text: cleanText,
       start: clampedStart,
       end: clampedEnd,
       words: syncedWords,
@@ -245,7 +275,7 @@ export function syncWordsToTimeline(
 
 /**
  * Converts raw Gemini transcription to structured caption track segments,
- * applying pacing and gapping rules automatically.
+ * applying pacing and zero-gap alignment automatically.
  */
 export function geminiToCaptionTrack(
   transcription: GeminiTranscription,
@@ -255,17 +285,32 @@ export function geminiToCaptionTrack(
   const rawWords: CaptionWord[] = [];
 
   for (const seg of transcription.segments) {
-    for (const w of seg.words) {
+    const wordsList = seg.words && seg.words.length > 0
+      ? seg.words
+      : seg.text.split(/\s+/).filter(Boolean).map((t, idx, arr) => {
+          const dur = (seg.end - seg.start) / arr.length;
+          return {
+            text: t,
+            start: seg.start + idx * dur,
+            end: seg.start + (idx + 1) * dur,
+          };
+        });
+
+    for (const w of wordsList) {
+      const cleanWordText = (language === 'hi' || language === 'ur')
+        ? w.text
+        : sanitizeToHinglish(w.text);
+
       rawWords.push({
         id: uuid(),
-        text: w.text,
+        text: cleanWordText,
         start: w.start,
         end: w.end,
       });
     }
   }
 
-  // Re-segment with pacing rules and apply ideal -180ms lead offset so speech and words sync 1:1
+  // Re-segment with pacing rules and zero gaps — preserve exact acoustic start/end (offset 0)
   const segmented = resegmentWords(rawWords, language, rules);
-  return syncWordsToTimeline(segmented, -0.18);
+  return syncWordsToTimeline(segmented, 0);
 }

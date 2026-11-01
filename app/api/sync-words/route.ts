@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { CaptionTrack, CaptionSegment, CaptionWord } from '@/types/caption';
 import { syncWordsToTimeline } from '@/lib/captions/segment';
+import { sanitizeToHinglish } from '@/lib/captions/transliterate';
 import { genai, MODEL, FALLBACK_MODELS } from '@/lib/gemini/client';
 import fs from 'fs';
 
@@ -95,14 +96,20 @@ Rules:
           const aligned = track.segments.map((origSeg) => {
             const aiSeg = aiSegmentsMap.get(origSeg.id);
             if (!aiSeg) return origSeg;
-            const newWords: CaptionWord[] = (aiSeg.words || []).map((w: any, idx: number) => ({
-              id: origSeg.words[idx]?.id || `w-${Date.now()}-${idx}`,
-              text: w.text || origSeg.words[idx]?.text || '',
-              start: typeof w.start === 'number' ? w.start : origSeg.start,
-              end: typeof w.end === 'number' ? w.end : origSeg.end,
-            }));
+            const newWords: CaptionWord[] = (aiSeg.words || []).map((w: any, idx: number) => {
+              const rawWText = w.text || origSeg.words[idx]?.text || '';
+              const cleanWText = (track.language === 'hi' || track.language === 'ur') ? rawWText : sanitizeToHinglish(rawWText);
+              return {
+                id: origSeg.words[idx]?.id || `w-${Date.now()}-${idx}`,
+                text: cleanWText,
+                start: typeof w.start === 'number' ? w.start : origSeg.start,
+                end: typeof w.end === 'number' ? w.end : origSeg.end,
+              };
+            });
+            const segCleanText = (track.language === 'hi' || track.language === 'ur') ? origSeg.text : sanitizeToHinglish(origSeg.text);
             return {
               ...origSeg,
+              text: segCleanText,
               start: typeof aiSeg.start === 'number' ? aiSeg.start : origSeg.start,
               end: typeof aiSeg.end === 'number' ? aiSeg.end : origSeg.end,
               words: newWords.length > 0 ? newWords : origSeg.words,

@@ -149,7 +149,7 @@ export default function EditorPage() {
   const [project, setProject] = useState<ProjectData | null>(null);
   const [tracks, setTracks] = useState<CaptionTrack[]>([]);
   const [activeTrack, setActiveTrack] = useState<CaptionTrack | null>(null);
-  const [language, setLanguage] = useState<Language>('auto');
+  const [language, setLanguage] = useState<Language>('hinglish');
   const [pacing, setPacing] = useState<PacingPresetKey>('2-3');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSyncingWords, setIsSyncingWords] = useState(false);
@@ -499,26 +499,26 @@ export default function EditorPage() {
           description: `All ${totalWords} words aligned to audio waveform with zero gaps.`,
         });
       } else {
-        // Fast instant cadence zero-gap sync with natural -180ms lead offset to eliminate speech lag!
-        const updatedSegments = syncWordsToTimeline(activeTrack.segments, -0.18);
+        // Precision cadence zero-gap sync (no compounding drift offset)
+        const updatedSegments = syncWordsToTimeline(activeTrack.segments, 0);
         const updatedTrack = { ...activeTrack, segments: updatedSegments };
         const newTracks = tracks.map((t) => (t.id === updatedTrack.id ? updatedTrack : t));
         persistTracks(newTracks);
         const totalWords = updatedSegments.reduce((acc, s) => acc + s.words.length, 0);
         toast({
           title: '⚡ Perfect Word-to-Word Sync Complete!',
-          description: `All ${totalWords} words aligned with speech onset (-180ms lead & zero-gap cadence)!`,
+          description: `All ${totalWords} words locked to speech onset with zero gaps & no drift!`,
         });
       }
     } catch (err: any) {
-      // Graceful fallback to instant cadence sync with lead offset
-      const updatedSegments = syncWordsToTimeline(activeTrack.segments, -0.18);
+      // Graceful fallback to instant cadence sync
+      const updatedSegments = syncWordsToTimeline(activeTrack.segments, 0);
       const updatedTrack = { ...activeTrack, segments: updatedSegments };
       const newTracks = tracks.map((t) => (t.id === updatedTrack.id ? updatedTrack : t));
       persistTracks(newTracks);
       toast({
         title: '⚡ Word-to-Word Sync Complete!',
-        description: 'Synchronized with speech onset lead.',
+        description: 'Synchronized with zero gaps & stable timing.',
       });
     } finally {
       setIsSyncingWords(false);
@@ -3762,7 +3762,7 @@ export default function EditorPage() {
                       onClick={() => handleWordSync('cadence')}
                       disabled={isSyncingWords}
                       className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40 text-[11px] font-bold transition-all shadow-sm cursor-pointer"
-                      title="1-Click Perfect Sync (-180ms lead offset)"
+                      title="1-Click Perfect Sync (Locks word-to-word timing without drift)"
                     >
                       <Zap className={`w-3.5 h-3.5 text-yellow-300 ${isSyncingWords ? 'animate-bounce' : ''}`} />
                       <span>{isSyncingWords ? 'Syncing...' : '⚡ Perfect Sync'}</span>

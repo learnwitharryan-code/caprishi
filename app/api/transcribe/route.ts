@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       pacingPreset?: PacingPresetKey;
     };
     projectId = body.projectId;
-    const language = body.language || 'auto';
+    const language = body.language || 'hinglish';
     const pacingRules =
       body.pacingPreset && PACING_PRESETS[body.pacingPreset]
         ? PACING_PRESETS[body.pacingPreset]
