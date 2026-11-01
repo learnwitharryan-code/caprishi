@@ -11,15 +11,42 @@ const UPLOAD_DIR = process.env.VERCEL
   ? path.join('/tmp', 'uploads')
   : path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? './uploads');
 const MAX_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE_MB ?? '500') * 1024 * 1024;
-const ALLOWED = new Set([
+
+const ALLOWED_MIME_TYPES = new Set([
   'video/mp4',
   'video/quicktime',
   'video/x-matroska',
   'video/webm',
+  'video/avi',
+  'video/x-msvideo',
+  'video/3gpp',
+  'video/mp2t',
   'audio/mpeg',
   'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
   'audio/x-m4a',
   'audio/mp4',
+  'audio/aac',
+  'audio/ogg',
+  'audio/flac',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.mp4',
+  '.mov',
+  '.mkv',
+  '.webm',
+  '.avi',
+  '.m4v',
+  '.3gp',
+  '.ts',
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.flac',
 ]);
 
 export async function POST(req: NextRequest) {
@@ -33,19 +60,27 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     if (file.size > MAX_SIZE)
       return NextResponse.json(
-        { error: `File too large. Max ${process.env.MAX_UPLOAD_SIZE_MB}MB.` },
+        { error: `File too large. Max ${process.env.MAX_UPLOAD_SIZE_MB ?? 500}MB.` },
         { status: 413 }
       );
-    if (!ALLOWED.has(file.type))
-      return NextResponse.json({ error: `Unsupported file type: ${file.type}` }, { status: 415 });
+
+    const ext = path.extname(file.name).toLowerCase();
+    const isAllowed = ALLOWED_MIME_TYPES.has(file.type) || ALLOWED_EXTENSIONS.has(ext);
+
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: `Unsupported file type (${file.type || ext}). Please upload MP4, MOV, MKV, WebM, MP3 or WAV.` },
+        { status: 415 }
+      );
+    }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
 
     // Sanitize filename
-    const ext = path.extname(file.name).replace(/[^a-zA-Z0-9.]/g, '') || '.mp4';
-    const safeName = `${hash.slice(0, 16)}${ext}`;
+    const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '') || '.mp4';
+    const safeName = `${hash.slice(0, 16)}${safeExt}`;
     const filePath = path.join(UPLOAD_DIR, safeName);
 
     await writeFile(filePath, buffer);
@@ -92,8 +127,8 @@ export async function POST(req: NextRequest) {
       mediaInfo: info,
       message: 'Upload successful',
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[upload]', err);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Upload failed' }, { status: 500 });
   }
 }

@@ -1,18 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Sparkles, Film, Globe, Zap } from 'lucide-react';
+import { useDropzone } from 'react-dropzone';
+import { Upload, Film, Sparkles, Languages, Gauge, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-
-const FEATURES = [
-  { icon: Sparkles, title: 'AI Captions', desc: 'Hindi, English, Urdu & Hinglish in seconds' },
-  { icon: Globe, title: 'RTL Support', desc: 'Perfect Urdu Nastaliq & Devanagari rendering' },
-  { icon: Film, title: 'Animated Templates', desc: '30+ creator-style caption templates' },
-  { icon: Zap, title: 'Up to 4K Export', desc: 'Burn captions into video, or export SRT' },
-];
 
 export default function HomePage() {
   const router = useRouter();
@@ -25,7 +18,11 @@ export default function HomePage() {
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0];
       if (!file) return;
-      setFileInfo({ name: file.name, size: (file.size / 1024 / 1024).toFixed(1) + ' MB' });
+
+      setFileInfo({
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      });
       setUploading(true);
       setError('');
       setProgress(10);
@@ -42,18 +39,46 @@ export default function HomePage() {
         const result = await new Promise<{ projectId: string }>((resolve, reject) => {
           xhr.open('POST', '/api/upload');
           xhr.onload = () => {
-            if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
-            else if (xhr.status === 413) {
-              reject(new Error('File too large for Vercel (Vercel max 4.5MB). Please use localhost for unlimited video sizes.'));
+            if (xhr.status === 200) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch {
+                reject(new Error('Invalid server response'));
+              }
+            } else if (xhr.status === 413) {
+              const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
+              reject(
+                new Error(
+                  isVercel
+                    ? 'File exceeds Vercel limit (4.5MB). Please use http://localhost:3000 for full unlimited video uploads!'
+                    : 'File too large. Max 500MB.'
+                )
+              );
             } else {
               try {
-                reject(new Error(JSON.parse(xhr.responseText).error ?? `Upload failed (${xhr.status})`));
+                const parsed = JSON.parse(xhr.responseText);
+                reject(new Error(parsed.error ?? `Upload failed (${xhr.status})`));
               } catch {
                 reject(new Error(`Upload failed (Status ${xhr.status})`));
               }
             }
           };
-          xhr.onerror = () => reject(new Error('Network error: Vercel rejected the connection. This happens if the file exceeds Vercel\'s 4.5MB limit, or if "Deployment Protection" is ON in Vercel settings. Please use Localhost for full unlimited editing.'));
+          xhr.onerror = () => {
+            const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
+            if (isVercel) {
+              reject(
+                new Error(
+                  'Upload failed on Vercel (Vercel blocks file payloads > 4.5MB). Please open http://localhost:3000 in your browser to edit unlimited size videos!'
+                )
+              );
+            } else {
+              reject(
+                new Error(
+                  'Upload connection failed. Please ensure the dev server is running on http://localhost:3000 and try again.'
+                )
+              );
+            }
+          };
           xhr.send(formData);
         });
         setProgress(100);
@@ -69,8 +94,8 @@ export default function HomePage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'video/*': ['.mp4', '.mov', '.mkv', '.webm'],
-      'audio/*': ['.mp3', '.wav', '.m4a'],
+      'video/*': ['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v'],
+      'audio/*': ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac'],
     },
     maxFiles: 1,
     disabled: uploading,
@@ -185,3 +210,26 @@ export default function HomePage() {
     </div>
   );
 }
+
+const FEATURES = [
+  {
+    icon: Sparkles,
+    title: 'Word-Level Sync',
+    desc: 'High-precision word-by-word timing locked to speech onset with zero dead gaps',
+  },
+  {
+    icon: Languages,
+    title: 'Desi Speech Engine',
+    desc: 'Trained on Hindi, Urdu, English & code-switching Hinglish without Devanagari mixups',
+  },
+  {
+    icon: Gauge,
+    title: 'Viral Pacing Presets',
+    desc: 'Instant 1-2 words, 2-3 words, or 3-5 words reels presets with zero drift',
+  },
+  {
+    icon: Palette,
+    title: 'Custom Styles & Render',
+    desc: 'TikTok, Hormozi, Neon, Pop & custom styles burned directly into video',
+  },
+];
