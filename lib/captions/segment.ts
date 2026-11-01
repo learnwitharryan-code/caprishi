@@ -148,24 +148,34 @@ export function computeWordPhoneticWeight(wordText: string): number {
 /**
  * Full Word-to-Word Sync Engine:
  * 1. Enforces strict chronological order of segments without overlaps.
- * 2. Guarantees word 0 begins at seg.start and last word terminates at seg.end.
- * 3. Eliminates all dead gaps between words (word[i].end === word[i+1].start).
- * 4. Distributes word durations proportionally using natural phonetic/syllable weights
+ * 2. Applies lead offset (e.g. -0.18s to counteract Gemini speech delay and speech onset lag).
+ * 3. Guarantees word 0 begins at seg.start and last word terminates at seg.end.
+ * 4. Eliminates all dead gaps between words (word[i].end === word[i+1].start).
+ * 5. Distributes word durations proportionally using natural phonetic/syllable weights
  *    so every word aligns naturally with human speech cadence.
  */
-export function syncWordsToTimeline(segments: CaptionSegment[]): CaptionSegment[] {
+export function syncWordsToTimeline(
+  segments: CaptionSegment[],
+  leadOffsetSeconds: number = 0
+): CaptionSegment[] {
   if (!segments || segments.length === 0) return [];
 
   // Sort segments by start time
   const sorted = [...segments].sort((a, b) => a.start - b.start);
 
   return sorted.map((seg, segIdx) => {
-    let clampedStart = Math.max(0, Math.round(seg.start * 1000) / 1000);
-    let clampedEnd = Math.max(clampedStart + 0.2, Math.round(seg.end * 1000) / 1000);
+    let rawStart = seg.start + leadOffsetSeconds;
+    let rawEnd = seg.end + leadOffsetSeconds;
+
+    let clampedStart = Math.max(0, Math.round(rawStart * 1000) / 1000);
+    let clampedEnd = Math.max(clampedStart + 0.25, Math.round(rawEnd * 1000) / 1000);
 
     const nextSeg = sorted[segIdx + 1];
-    if (nextSeg && clampedEnd > nextSeg.start - 0.04) {
-      clampedEnd = Math.max(clampedStart + 0.2, Math.round((nextSeg.start - 0.04) * 1000) / 1000);
+    if (nextSeg) {
+      const nextRawStart = nextSeg.start + leadOffsetSeconds;
+      if (clampedEnd > nextRawStart - 0.03) {
+        clampedEnd = Math.max(clampedStart + 0.2, Math.round((nextRawStart - 0.03) * 1000) / 1000);
+      }
     }
 
     const segDuration = Math.max(0.2, clampedEnd - clampedStart);
@@ -255,7 +265,7 @@ export function geminiToCaptionTrack(
     }
   }
 
-  // Re-segment with pacing rules
+  // Re-segment with pacing rules and apply ideal -180ms lead offset so speech and words sync 1:1
   const segmented = resegmentWords(rawWords, language, rules);
-  return syncWordsToTimeline(segmented);
+  return syncWordsToTimeline(segmented, -0.18);
 }

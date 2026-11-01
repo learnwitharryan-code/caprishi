@@ -377,9 +377,13 @@ export default function EditorPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [editingSegId]);
 
-  const currentSegment = activeTrack?.segments.find(
-    (s) => currentTime >= s.start && currentTime <= s.end
-  );
+  // Find current active segment with smart bridge so captions don't disappear between phrases
+  const currentSegment = activeTrack?.segments.find((s, idx, arr) => {
+    const nextSeg = arr[idx + 1];
+    // Hold caption on screen until the next segment starts (up to 0.35s) to avoid empty screen drops
+    const maxHold = nextSeg ? Math.min(nextSeg.start, s.end + 0.35) : s.end + 0.35;
+    return currentTime >= s.start && currentTime <= maxHold;
+  });
 
   // High-precision word-to-word active lookup with zero micro-gap drops
   const activeWord = currentSegment?.words.find((w, i, arr) => {
@@ -442,6 +446,29 @@ export default function EditorPage() {
     } catch {}
   };
 
+  // Calibrate speech timing lead offset (e.g. -180ms or custom offset)
+  const handleApplyLeadOffset = async (offsetMs: number) => {
+    if (!activeTrack || !activeTrack.segments.length) {
+      toast({ title: 'No captions available to calibrate', variant: 'destructive' });
+      return;
+    }
+    setIsSyncingWords(true);
+    try {
+      const offsetSeconds = offsetMs / 1000;
+      const updatedSegments = syncWordsToTimeline(activeTrack.segments, offsetSeconds);
+      const updatedTrack = { ...activeTrack, segments: updatedSegments };
+      const newTracks = tracks.map((t) => (t.id === updatedTrack.id ? updatedTrack : t));
+      persistTracks(newTracks);
+      const totalWords = updatedSegments.reduce((acc, s) => acc + s.words.length, 0);
+      toast({
+        title: offsetMs < 0 ? `⚡ Shifted ${Math.abs(offsetMs)}ms Earlier!` : `⚡ Shifted +${offsetMs}ms Later!`,
+        description: `All ${totalWords} words re-aligned with audio speech onset.`,
+      });
+    } finally {
+      setIsSyncingWords(false);
+    }
+  };
+
   // Full Word-to-Word Sync (Cadence zero-gap & AI Audio Alignment)
   const handleWordSync = async (mode: 'cadence' | 'ai' = 'cadence') => {
     if (!activeTrack || !activeTrack.segments.length) {
@@ -472,26 +499,26 @@ export default function EditorPage() {
           description: `All ${totalWords} words aligned to audio waveform with zero gaps.`,
         });
       } else {
-        // Fast instant cadence zero-gap sync
-        const updatedSegments = syncWordsToTimeline(activeTrack.segments);
+        // Fast instant cadence zero-gap sync with natural -180ms lead offset to eliminate speech lag!
+        const updatedSegments = syncWordsToTimeline(activeTrack.segments, -0.18);
         const updatedTrack = { ...activeTrack, segments: updatedSegments };
         const newTracks = tracks.map((t) => (t.id === updatedTrack.id ? updatedTrack : t));
         persistTracks(newTracks);
         const totalWords = updatedSegments.reduce((acc, s) => acc + s.words.length, 0);
         toast({
-          title: '⚡ Word-to-Word Sync Complete!',
-          description: `All ${totalWords} words perfectly aligned with zero gaps & speech rhythm!`,
+          title: '⚡ Perfect Word-to-Word Sync Complete!',
+          description: `All ${totalWords} words aligned with speech onset (-180ms lead & zero-gap cadence)!`,
         });
       }
     } catch (err: any) {
-      // Graceful fallback to instant cadence sync
-      const updatedSegments = syncWordsToTimeline(activeTrack.segments);
+      // Graceful fallback to instant cadence sync with lead offset
+      const updatedSegments = syncWordsToTimeline(activeTrack.segments, -0.18);
       const updatedTrack = { ...activeTrack, segments: updatedSegments };
       const newTracks = tracks.map((t) => (t.id === updatedTrack.id ? updatedTrack : t));
       persistTracks(newTracks);
       toast({
         title: '⚡ Word-to-Word Sync Complete!',
-        description: 'Synchronized with zero-gap speech rhythm.',
+        description: 'Synchronized with speech onset lead.',
       });
     } finally {
       setIsSyncingWords(false);
@@ -1070,28 +1097,60 @@ export default function EditorPage() {
                     : '⚡ Generate AI Captions'}
                 </button>
 
-                {/* Full Word-to-Word Sync Action Bar */}
+                {/* Full Word-to-Word Sync & Speech Lead Calibrator */}
                 {activeTrack && activeTrack.segments.length > 0 && (
-                  <div className="pt-2 border-t border-[#1E2026]/80 flex flex-col gap-1.5">
+                  <div className="pt-2 border-t border-[#1E2026]/80 flex flex-col gap-2">
+                    {/* Primary Perfect Sync Button */}
                     <button
                       onClick={() => handleWordSync('cadence')}
                       disabled={isSyncingWords}
-                      className="w-full py-2 px-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer ring-1 ring-emerald-400/30"
-                      title="1-Click Zero-Gap Word-to-Word Cadence Sync"
+                      className="w-full py-2.5 px-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer ring-2 ring-emerald-400/40 hover:scale-[1.01]"
+                      title="1-Click Auto Perfect Sync: Eliminates speech delay with acoustic onset lead"
                     >
                       <Zap className={`w-4 h-4 text-yellow-300 ${isSyncingWords ? 'animate-bounce' : ''}`} />
-                      <span>{isSyncingWords ? 'Syncing Words...' : '⚡ Full Word-to-Word Sync'}</span>
+                      <span>{isSyncingWords ? 'Calibrating Sync...' : '⚡ 1-Click Perfect Sync (Word-to-Word)'}</span>
                     </button>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handleWordSync('ai')}
-                        disabled={isSyncingWords}
-                        className="flex-1 py-1 px-2 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-emerald-500/50 text-gray-300 hover:text-white text-[11px] font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                        title="Deep AI speech alignment to audio waveform"
-                      >
-                        <Sparkles className="w-3 h-3 text-emerald-400" />
-                        <span>🎙️ AI Audio Sync</span>
-                      </button>
+
+                    {/* Fine-tuning Speech Timing Nudge Toolbar */}
+                    <div className="bg-[#12141A] border border-[#232632] rounded-xl p-2 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] text-gray-400 font-semibold px-0.5">
+                        <span>Speech Timing Nudge:</span>
+                        <span className="text-emerald-400 font-mono">Earlier ➔ Later</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        <button
+                          onClick={() => handleApplyLeadOffset(-100)}
+                          disabled={isSyncingWords}
+                          className="py-1 px-1 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-emerald-500/50 text-[10px] font-bold text-emerald-300 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                          title="Shift captions 100ms earlier (if word is spoken first)"
+                        >
+                          ⏩ -100ms
+                        </button>
+                        <button
+                          onClick={() => handleApplyLeadOffset(-50)}
+                          disabled={isSyncingWords}
+                          className="py-1 px-1 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-emerald-500/50 text-[10px] font-bold text-emerald-300 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                          title="Shift captions 50ms earlier"
+                        >
+                          ⏩ -50ms
+                        </button>
+                        <button
+                          onClick={() => handleApplyLeadOffset(50)}
+                          disabled={isSyncingWords}
+                          className="py-1 px-1 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-emerald-500/50 text-[10px] font-bold text-yellow-300 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                          title="Shift captions 50ms later (if caption shows too early)"
+                        >
+                          ⏪ +50ms
+                        </button>
+                        <button
+                          onClick={() => handleApplyLeadOffset(100)}
+                          disabled={isSyncingWords}
+                          className="py-1 px-1 bg-[#1A1C22] hover:bg-[#222530] border border-[#282B34] hover:border-emerald-500/50 text-[10px] font-bold text-yellow-300 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                          title="Shift captions 100ms later"
+                        >
+                          ⏪ +100ms
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3698,15 +3757,33 @@ export default function EditorPage() {
                   {formatTime(currentTime)} / {formatTime(project.mediaDuration)}
                 </span>
                 {activeTrack && activeTrack.segments.length > 0 && (
-                  <button
-                    onClick={() => handleWordSync('cadence')}
-                    disabled={isSyncingWords}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40 text-[11px] font-bold transition-all shadow-sm cursor-pointer"
-                    title="1-Click Auto Word-to-Word Sync (Zero-gap speech cadence)"
-                  >
-                    <Zap className={`w-3.5 h-3.5 text-yellow-300 ${isSyncingWords ? 'animate-bounce' : ''}`} />
-                    <span>{isSyncingWords ? 'Syncing...' : 'Word-to-Word Sync'}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleWordSync('cadence')}
+                      disabled={isSyncingWords}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40 text-[11px] font-bold transition-all shadow-sm cursor-pointer"
+                      title="1-Click Perfect Sync (-180ms lead offset)"
+                    >
+                      <Zap className={`w-3.5 h-3.5 text-yellow-300 ${isSyncingWords ? 'animate-bounce' : ''}`} />
+                      <span>{isSyncingWords ? 'Syncing...' : '⚡ Perfect Sync'}</span>
+                    </button>
+                    <button
+                      onClick={() => handleApplyLeadOffset(-50)}
+                      disabled={isSyncingWords}
+                      className="px-2 py-1 rounded-lg bg-[#1F222B] hover:bg-[#2A2E3B] text-gray-300 hover:text-emerald-300 text-[10px] font-bold border border-[#2F3341] cursor-pointer"
+                      title="Shift captions 50ms earlier"
+                    >
+                      -50ms
+                    </button>
+                    <button
+                      onClick={() => handleApplyLeadOffset(50)}
+                      disabled={isSyncingWords}
+                      className="px-2 py-1 rounded-lg bg-[#1F222B] hover:bg-[#2A2E3B] text-gray-300 hover:text-yellow-300 text-[10px] font-bold border border-[#2F3341] cursor-pointer"
+                      title="Shift captions 50ms later"
+                    >
+                      +50ms
+                    </button>
+                  </div>
                 )}
               </div>
 

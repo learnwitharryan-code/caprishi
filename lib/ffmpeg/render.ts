@@ -200,10 +200,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     dimAlphaHex = Math.max(0, Math.min(255, alphaVal)).toString(16).padStart(2, '0').toUpperCase();
   }
 
-  for (const seg of segments) {
+  for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+    const seg = segments[sIdx];
+    const nextSeg = segments[sIdx + 1];
+    // Smooth bridge: hold caption on screen until next segment begins (if gap < 0.35s)
+    const bridgeSegEnd = (nextSeg && (nextSeg.start - seg.end < 0.35) && (nextSeg.start >= seg.end))
+      ? nextSeg.start
+      : seg.end;
+
     if (!seg.words || seg.words.length === 0) {
       const start = formatAssTime(seg.start);
-      const end = formatAssTime(seg.end);
+      const end = formatAssTime(bridgeSegEnd);
       const text = transformWord(seg.text, false);
       dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an5\\pos(${posX},${posY})${wrapTag}}${text}`);
       continue;
@@ -214,7 +221,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const activeW = seg.words[i];
       const nextW = seg.words[i + 1];
       const start = formatAssTime(i === 0 ? Math.min(seg.start, activeW.start) : activeW.start);
-      const end = formatAssTime(i === seg.words.length - 1 ? Math.max(seg.end, activeW.end) : (nextW ? nextW.start : activeW.end));
+      const end = formatAssTime(i === seg.words.length - 1 ? Math.max(bridgeSegEnd, activeW.end) : (nextW ? nextW.start : activeW.end));
 
       // Build text with active word highlighted
       const wordsElements: string[] = [];
