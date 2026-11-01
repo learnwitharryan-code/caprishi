@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { renderVideo, RenderResolution } from '@/lib/ffmpeg/render';
-import { CaptionStyle, DEFAULT_STYLE } from '@/lib/templates/registry';
+import { CaptionStyle, DEFAULT_STYLE, TEMPLATES } from '@/lib/templates/registry';
 import { CaptionSegment, CaptionTrack } from '@/types/caption';
 import path from 'path';
 import fs from 'fs';
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     const {
       projectId,
       resolution = '1080p',
-      style = DEFAULT_STYLE,
+      style: incomingStyle,
       trackId,
       segments: incomingSegments,
     } = (await req.json()) as {
@@ -33,6 +33,22 @@ export async function POST(req: NextRequest) {
 
     if (!fs.existsSync(project.mediaPath)) {
       return NextResponse.json({ error: 'Source media file missing' }, { status: 404 });
+    }
+
+    // Determine the exact style: Prioritize what was on screen, then saved customized project, never default fallback if custom exists
+    let styleToRender: CaptionStyle;
+    if (incomingStyle && (incomingStyle.fontFamily || incomingStyle.id)) {
+      styleToRender = incomingStyle;
+    } else if (project.captionStyleJson) {
+      try {
+        styleToRender = JSON.parse(project.captionStyleJson);
+      } catch (e) {
+        styleToRender = DEFAULT_STYLE;
+      }
+    } else if (project.templateId && (TEMPLATES as Record<string, CaptionStyle>)[project.templateId]) {
+      styleToRender = (TEMPLATES as Record<string, CaptionStyle>)[project.templateId];
+    } else {
+      styleToRender = DEFAULT_STYLE;
     }
 
     let segmentsToRender: CaptionSegment[] = [];
@@ -63,8 +79,8 @@ export async function POST(req: NextRequest) {
       await prisma.project.update({
         where: { id: projectId },
         data: {
-          templateId: style.id,
-          captionStyleJson: JSON.stringify(style),
+          templateId: styleToRender.id || project.templateId,
+          captionStyleJson: JSON.stringify(styleToRender),
         },
       });
     } catch (e) {
@@ -74,7 +90,7 @@ export async function POST(req: NextRequest) {
     await renderVideo(
       project.mediaPath,
       segmentsToRender,
-      style,
+      styleToRender,
       resolution,
       outputPath
     );

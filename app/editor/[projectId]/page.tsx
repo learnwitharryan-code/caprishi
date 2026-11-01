@@ -170,6 +170,7 @@ export default function EditorPage() {
 
   // Caption Styling State
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(DEFAULT_STYLE);
+  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
   // Custom Fonts State
   const [customFonts, setCustomFonts] = useState<Array<{ label: string; value: string }>>([]);
@@ -228,7 +229,7 @@ export default function EditorPage() {
         if (p.captionStyleJson) {
           try {
             const savedStyle = JSON.parse(p.captionStyleJson);
-            if (savedStyle && (savedStyle.id || savedStyle.name)) {
+            if (savedStyle && (savedStyle.id || savedStyle.name || savedStyle.fontFamily)) {
               setCaptionStyle(savedStyle);
             }
           } catch (e) {
@@ -237,13 +238,14 @@ export default function EditorPage() {
         } else if (p.templateId && TEMPLATES[p.templateId]) {
           setCaptionStyle(TEMPLATES[p.templateId]);
         }
+        setIsStyleLoaded(true);
       })
       .catch(() => toast({ title: 'Failed to load project', variant: 'destructive' }));
   }, [projectId, toast]);
 
-  // Debounced auto-save of caption customizations
+  // Debounced auto-save of caption customizations (only after initial load to prevent overwriting)
   useEffect(() => {
-    if (!project || !projectId) return;
+    if (!isStyleLoaded || !project || !projectId) return;
     const timer = setTimeout(() => {
       fetch(`/api/projects/${projectId}`, {
         method: 'PATCH',
@@ -255,7 +257,7 @@ export default function EditorPage() {
       }).catch((err) => console.error('Failed to auto-save caption style', err));
     }, 600);
     return () => clearTimeout(timer);
-  }, [captionStyle, projectId, project]);
+  }, [captionStyle, isStyleLoaded, projectId, project]);
 
   // Global Pointer Dragging Listener for Timeline (60fps smooth resize & move)
   useEffect(() => {
@@ -445,6 +447,18 @@ export default function EditorPage() {
     setIsRendering(true);
     setRenderDownloadUrl(null);
     try {
+      // Synchronously capture and persist the latest editor state before rendering
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: captionStyle.id,
+          captionStyleJson: JSON.stringify(captionStyle),
+          tracksJson: JSON.stringify(tracks),
+          activeTrackId: activeTrack.id,
+        }),
+      }).catch((err) => console.warn('Could not sync project before render', err));
+
       const res = await fetch('/api/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

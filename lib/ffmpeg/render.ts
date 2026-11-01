@@ -49,6 +49,12 @@ function resolveAssFontName(rawFamily: string, fontFace?: string): { fontName: s
   const isBold = face.includes('Bold') || face.includes('Black') || face.includes('SemiBold') || face.includes('Medium') || face === 'Heavy';
 
   const lower = base.toLowerCase();
+  if (lower.includes('permanent marker')) return { fontName: 'Permanent Marker', isBold: 0 };
+  if (lower.includes('titan one')) return { fontName: 'Titan One', isBold: 0 };
+  if (lower.includes('vt323')) return { fontName: 'VT323', isBold: 0 };
+  if (lower.includes('black han sans')) return { fontName: 'Black Han Sans', isBold: 0 };
+  if (lower.includes('cinzel')) return { fontName: face.includes('Bold') ? 'Cinzel' : 'Cinzel', isBold: isBold ? -1 : 0 };
+  if (lower.includes('roboto')) return { fontName: 'Roboto', isBold: isBold ? -1 : 0 };
   if (lower.includes('poppins')) {
     if (face.includes('Black')) return { fontName: 'Poppins Black', isBold: 0 };
     if (face.includes('Extra Bold')) return { fontName: 'Poppins ExtraBold', isBold: 0 };
@@ -73,6 +79,8 @@ function resolveAssFontName(rawFamily: string, fontFace?: string): { fontName: s
   if (lower.includes('outfit')) return { fontName: 'Outfit', isBold: isBold ? -1 : 0 };
   if (lower.includes('oswald')) return { fontName: 'Oswald', isBold: isBold ? -1 : 0 };
   if (lower.includes('inter')) return { fontName: 'Inter', isBold: isBold ? -1 : 0 };
+  if (lower.includes('arial black')) return { fontName: 'Arial', isBold: -1 };
+  if (lower.includes('impact')) return { fontName: 'Impact', isBold: 0 };
 
   return { fontName: base || 'Poppins', isBold: isBold ? -1 : 0 };
 }
